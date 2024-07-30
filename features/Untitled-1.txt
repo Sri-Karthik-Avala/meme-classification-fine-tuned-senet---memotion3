@@ -1,0 +1,98 @@
+
+import os
+import sys
+import numpy as np
+import pandas as pd
+import requests
+import streamlit as st
+import openai
+import matplotlib
+from langchain.agents import create_csv_agent, create_pandas_dataframe_agent
+from langchain.llms import OpenAI
+from streamlit_chat import message
+from langchain.agents import create_sql_agent
+from langchain.agents.agent_toolkits import SQLDatabaseToolkit
+from langchain.sql_database import SQLDatabase
+from langchain.llms.openai import OpenAI
+from langchain.agents.agent_types import AgentType
+from langchain.chat_models import ChatOpenAI
+
+from sqlalchemy import create_engine
+import os
+
+os.environ['OPENAI_API_KEY'] = 'pk-TPDvcjviItIefqNJCnRMyviSFicbITLRwuABCBVxlkiguPav'
+openai.api_base = 'https://api.pawan.krd/v1'
+
+# Establish the MySQL connection using SQLAlchemy
+engine = create_engine('mysql+mysqlconnector://root:2002@localhost/prodigy')
+
+# Create the SQLDatabase object using the SQLAlchemy engine
+db = SQLDatabase(engine)
+
+# Create the toolkit using the SQLDatabase and OpenAI instances
+toolkit = SQLDatabaseToolkit(db=db, llm=OpenAI(temperature=0),Model="text-davinci-003",
+)
+
+# Create the agent executor
+agent_executor = create_sql_agent(
+    llm=OpenAI(temperature=0,max_tokens=150,
+        n=1,
+        stop=None,
+        timeout=10),
+    toolkit=toolkit,
+    agent_type= AgentType.CONVERSATIONAL_REACT_DESCRIPTION,
+    verbose=True
+)
+
+# Hide traceback
+st.set_option('client.showErrorDetails', False)
+
+# Setting page title and header
+st.set_page_config(page_title="CLOCKIFY DATA SUMMARIZER", page_icon=":robot_face:")
+st.markdown("<h1 style='text-align: center;'>CLOCKIFY DATA SUMMARIZER</h1>", unsafe_allow_html=True)
+
+# Initialise session state variables
+if 'generated' not in st.session_state:
+    st.session_state['generated'] = []
+
+if 'past' not in st.session_state:
+    st.session_state['past'] = []
+    
+if 'messages' not in st.session_state:
+    st.session_state['messages'] = [
+        {"role": "system", "content": "You are a helpful assistant."}
+    ]
+
+    
+def generate_response(input_text):
+    query_response = agent_executor.run(input_text)
+    return query_response
+
+# container for chat history
+response_container = st.container()
+
+# container for text box
+input_container = st.container()
+
+
+with input_container:
+    # Create a form for user input
+    with st.form(key='my_form', clear_on_submit=True):
+        user_input = st.text_area("You:", key='input', height=100)
+        submit_button = st.form_submit_button(label='Send')
+
+    if submit_button and user_input:
+        # If user submits input, generate response and store input and response in session state variables
+        try:
+            query_response = generate_response(user_input)
+            st.session_state['past'].append(user_input)
+            st.session_state['generated'].append(query_response)
+        except Exception as e:
+            st.error("An error occurred: {}".format(e))
+
+if st.session_state['generated']:
+    # Display chat history in a container
+    with response_container:
+        for i in range(len(st.session_state['generated'])):
+            message(st.session_state["past"][i], is_user=True, key=str(i) + '_user')
+            message(st.session_state["generated"][i], key=str(i))  
